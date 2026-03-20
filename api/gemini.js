@@ -1,64 +1,49 @@
-// Vercel Serverless Function — Gemini API Proxy
-// API key burada YOK — Vercel Environment Variables'dan geliyor
-
-module.exports = async function handler(req, res) {
-  // Sadece POST kabul et
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  // CORS — sadece kendi Vercel domain'inden
+module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  const { message, systemPrompt, temperature } = req.body;
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).end();
 
-  // Basit validasyon
-  if (!message || !systemPrompt) {
-    return res.status(400).json({ error: 'Eksik parametre' });
-  }
-  if (message.length > 4000 || systemPrompt.length > 6000) {
-    return res.status(400).json({ error: 'İçerik çok uzun' });
-  }
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return res.status(500).json({ error: 'Key yok' });
 
-  // Key Vercel'den geliyor — dosyada görünmez
-  const GEMINI_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_KEY) {
-    return res.status(500).json({ error: 'API key tanımlı değil' });
-  }
+  const { message, systemPrompt, temperature } = req.body || {};
+  if (!message || !systemPrompt) return res.status(400).json({ error: 'Eksik veri' });
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+
+  const body = JSON.stringify({
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: 'user', parts: [{ text: message }] }],
+    generationConfig: {
+      maxOutputTokens: 2800,
+      temperature: temperature || 0.82,
+      responseMimeType: 'application/json',
+    },
+  });
 
   try {
-    const geminiRes = await fetch(url, {
+    const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: message }] }],
-        generationConfig: {
-          maxOutputTokens: 2800,
-          temperature: temperature || 0.82,
-          responseMimeType: 'application/json',
-        },
-      }),
+      body,
     });
 
-    if (!geminiRes.ok) {
-      const err = await geminiRes.text();
-      if (geminiRes.status === 429) return res.status(429).json({ error: 'Çok fazla istek', code: 'RATE_LIMIT' });
-      return res.status(502).json({ error: 'Gemini hatası', code: 'UPSTREAM_ERROR' });
+    const text = await r.text();
+
+    if (!r.ok) {
+      console.error('Gemini hata:', r.status, text.slice(0, 300));
+      return res.status(r.status).json({ error: 'Gemini hatası', detail: text.slice(0, 200) });
     }
 
-    const data = await geminiRes.json();
-    const finishReason = data.candidates?.[0]?.finishReason;
-    if (finishReason === 'SAFETY') return res.status(200).json({ error: 'İçerik filtresi', code: 'SAFETY_FILTER' });
+    const data = JSON.parse(text);
+    const out = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    return res.status(200).json({ text: out });
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    return res.status(200).json({ text });
-
-  } catch (err) {
-    return res.status(500).json({ error: 'Sunucu hatası' });
+  } catch (e) {
+    console.error('Fetch hatası:', e.message);
+    return res.status(500).json({ error: e.message });
   }
-}
+};
