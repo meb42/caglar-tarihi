@@ -1,7 +1,7 @@
 // Vercel Serverless Function — Gemini API Proxy
 // API key burada YOK — Vercel Environment Variables'dan geliyor
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // Sadece POST kabul et
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
