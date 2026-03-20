@@ -1488,7 +1488,7 @@ async function callGemini(apiKey, msg, sp, attemptNum){
   // İlk denemede temperature 0.9, sonrakilerde daha düşük (daha tutarlı JSON)
   const temperature = attemptNum === 0 ? 0.9 : 0.5;
 
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${apiKey}`;
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
   const r = await fetch(geminiUrl, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
